@@ -2,8 +2,8 @@
 //!
 //! Windows: expects `mpv.lib` + `libmpv-2.dll` in `$MPV_LIB_DIR` (default `vendor/mpv-dev`); the DLL is
 //! copied next to the built binaries so `cargo run` / `cargo test` can load it.
-//! Linux/macOS: libmpv comes from the system (pkg-config / standard lib dirs); the binary gets an
-//! rpath so a bundled copy next to the executable is preferred.
+//! Linux: libmpv comes from the system (pkg-config); the binary gets an `$ORIGIN` rpath so a bundled
+//! copy next to the executable is preferred. macOS: see below.
 
 use std::path::{Path, PathBuf};
 
@@ -31,7 +31,9 @@ fn main() {
             }
         }
         "linux" => println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN"),
-        "macos" => println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path"),
+        // macOS: no rpath. Release bundles get absolute install names rewritten to
+        // @executable_path/libs/ by dylibbundler (an extra rpath only produces a duplicate LC_RPATH,
+        // which dyld rejects); dev builds use brew's absolute libmpv path.
         _ => {}
     }
 }

@@ -37,16 +37,26 @@ pub fn make_clip_rotated(dir: &Path, w: u32, h: u32, secs: u32) -> PathBuf {
     make_clip_rotated_by(dir, w, h, secs, 90)
 }
 
-/// Same, with an explicit display-matrix rotation (ffmpeg `-display_rotation`, counter-clockwise degrees).
+/// Same, with an explicit display-matrix rotation in counter-clockwise degrees.
+/// Uses `-display_rotation` (ffmpeg >= 6.0) and falls back to the legacy clockwise `rotate`
+/// metadata tag for older ffmpeg builds (e.g. Ubuntu 22.04's 4.4).
 pub fn make_clip_rotated_by(dir: &Path, w: u32, h: u32, secs: u32, degrees: u32) -> PathBuf {
     let src = make_clip(dir, w, h, secs, true);
     let out = dir.join("clip_rot.mp4");
-    run(&[
-        "-display_rotation".into(), degrees.to_string(),
-        "-i".into(), src.to_string_lossy().into_owned(),
-        "-c".into(), "copy".into(),
-        out.to_string_lossy().into_owned(),
-    ]);
+    let src_s = src.to_string_lossy().into_owned();
+    let out_s = out.to_string_lossy().into_owned();
+    let modern = Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-display_rotation", &degrees.to_string(), "-i", &src_s, "-c", "copy", &out_s])
+        .output()
+        .expect("ffmpeg not found on PATH");
+    if !modern.status.success() {
+        run(&[
+            "-i".into(), src_s,
+            "-c".into(), "copy".into(),
+            "-metadata:s:v:0".into(), format!("rotate={}", (360 - degrees % 360) % 360),
+            out_s,
+        ]);
+    }
     out
 }
 
