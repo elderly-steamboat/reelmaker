@@ -1,2 +1,6 @@
 [target.'cfg(windows)']
 runner = ["cmd", "/C", 'scripts\runner.cmd']
+
+# Statically link the C runtime so end users don't need the VC++ redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

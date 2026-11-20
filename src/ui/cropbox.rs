@@ -26,7 +26,7 @@ pub fn show(ui: &mut egui::Ui, stage: Rect, state: &mut AppState) {
     p.rect_filled(Rect::from_min_max(egui::pos2(rect.right(), stage.top()), stage.max), 0.0, dim);
     p.rect_filled(Rect::from_min_max(egui::pos2(rect.left(), stage.top()), egui::pos2(rect.right(), rect.top())), 0.0, dim);
     p.rect_filled(Rect::from_min_max(egui::pos2(rect.left(), rect.bottom()), egui::pos2(rect.right(), stage.bottom())), 0.0, dim);
-    p.rect_stroke(rect, 0.0, Stroke::new(2.0, ACCENT), StrokeKind::Inside);
+    p.rect_stroke(rect, 0.0, Stroke::new(2.0_f32, ACCENT), StrokeKind::Inside);
     p.text(
         egui::pos2(rect.center().x, rect.bottom() - 8.0),
         egui::Align2::CENTER_BOTTOM,

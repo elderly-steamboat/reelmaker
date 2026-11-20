@@ -91,7 +91,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, playhead: f64) -> Option<f6
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 }
                 painter.rect_filled(win, 6.0, Color32::from_rgba_unmultiplied(255, 61, 113, 56));
-                painter.rect_stroke(win, 6.0, Stroke::new(2.0, ACCENT), StrokeKind::Inside);
+                painter.rect_stroke(win, 6.0, Stroke::new(2.0_f32, ACCENT), StrokeKind::Inside);
                 painter.text(
                     win.left_top() + egui::vec2(6.0, 4.0),
                     egui::Align2::LEFT_TOP,
@@ -102,7 +102,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, playhead: f64) -> Option<f6
             }
 
             let hx = rect.left() + time_to_x(playhead, duration, rect.width());
-            painter.line_segment([egui::pos2(hx, rect.top()), egui::pos2(hx, rect.bottom())], Stroke::new(2.0, Color32::WHITE));
+            painter.line_segment([egui::pos2(hx, rect.top()), egui::pos2(hx, rect.bottom())], Stroke::new(2.0_f32, Color32::WHITE));
         }
 
         ui.horizontal(|ui| {

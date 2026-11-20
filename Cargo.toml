@@ -11,7 +11,6 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 libmpv2 = "7.0.1"
 rfd = "0.15"
 serde_json = "1"
-thiserror = "2"
 
 [dev-dependencies]
 tempfile = "3"
