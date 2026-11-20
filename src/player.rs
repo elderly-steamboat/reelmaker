@@ -106,6 +106,11 @@ impl Player {
         self.mpv.get_property::<f64>("time-pos").unwrap_or(0.0)
     }
 
+    /// True when paused, including when playback reached the end (`keep-open`).
+    pub fn paused(&self) -> bool {
+        self.mpv.get_property::<bool>("pause").unwrap_or(true)
+    }
+
     /// `None` until the file has loaded.
     pub fn duration(&self) -> Option<f64> {
         self.mpv.get_property::<f64>("duration").ok().filter(|d| *d > 0.0)

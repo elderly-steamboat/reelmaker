@@ -1,20 +1,13 @@
-
 use eframe::egui;
-
-struct App;
-
-impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.label("ReelMaker");
-        });
-    }
-}
+use reelmaker::app::App;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1280.0, 800.0])
+            .with_min_inner_size([960.0, 640.0])
+            .with_drag_and_drop(true),
         ..Default::default()
     };
-    eframe::run_native("ReelMaker", options, Box::new(|_cc| Ok(Box::new(App))))
+    eframe::run_native("ReelMaker", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
 }
