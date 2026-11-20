@@ -1,6 +1,3 @@
-mod filters;
-mod model;
-mod window;
 
 use eframe::egui;
 
