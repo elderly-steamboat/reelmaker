@@ -1,10 +1,11 @@
 //! UI-independent application state. No egui or mpv in here, so it is plain-unit-testable.
 
+use crate::export::ExportJob;
 use crate::filters::{reel_graph, Canvas};
 use crate::model::{Mode, Preset, Style};
 use crate::probe::{MediaInfo, ProbeError};
 use crate::window::ReelWindow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Size of the live 9:16 preview canvas (the export uses `Canvas::EXPORT`).
 pub const PREVIEW_CANVAS: Canvas = Canvas { w: 270, h: 480 };
@@ -81,10 +82,32 @@ impl AppState {
         self.style = Style { crop_x: v, ..self.style }.clamped();
     }
 
+    /// The export job for the current media, window and style. `None` without media.
+    pub fn export_job(&self, output: PathBuf, overwrite: bool) -> Option<ExportJob> {
+        let (m, w) = (self.media.as_ref()?, self.window?);
+        Some(ExportJob {
+            input: m.path.clone(),
+            output,
+            start: w.start,
+            length: w.length,
+            style: self.style,
+            has_audio: m.info.has_audio,
+            overwrite,
+        })
+    }
+
     /// mpv `lavfi-complex` graph for the 9:16 preview; `None` with no media loaded.
     pub fn preview_graph(&self) -> Option<String> {
         self.media.as_ref()?;
         Some(reel_graph(&self.style, PREVIEW_CANVAS, "vid1", "vo"))
+    }
+}
+
+/// `<stem>_reel.mp4`, for the save dialog's default file name.
+pub fn default_output_name(input: &Path) -> String {
+    match input.file_stem().map(|s| s.to_string_lossy()) {
+        Some(stem) if !stem.is_empty() => format!("{stem}_reel.mp4"),
+        _ => "reel.mp4".to_string(),
     }
 }
 
@@ -179,5 +202,44 @@ mod tests {
         let g = s.preview_graph().unwrap();
         assert!(g.contains("crop=") && !g.contains("boxblur"));
         assert!(g.starts_with("[vid1]") && g.ends_with("[vo]"));
+    }
+
+    #[test]
+    fn export_job_uses_window_and_style() {
+        let mut s = loaded(180.0);
+        s.set_preset(Preset::Short);
+        if let Some(w) = &mut s.window {
+            w.drag_to(180.0, 42.0);
+        }
+        s.set_mode(Mode::ZoomCrop);
+        s.set_zoom(1.5);
+        let j = s.export_job("out.mp4".into(), true).unwrap();
+        assert_eq!((j.start, j.length), (42.0, 15.0));
+        assert_eq!(j.style.mode, Mode::ZoomCrop);
+        assert_eq!(j.style.zoom, 1.5);
+        assert!(j.has_audio && j.overwrite);
+        assert_eq!(j.input, PathBuf::from("a.mp4"));
+        assert_eq!(j.output, PathBuf::from("out.mp4"));
+    }
+
+    #[test]
+    fn export_job_none_without_media() {
+        assert!(AppState::default().export_job("o.mp4".into(), false).is_none());
+    }
+
+    #[test]
+    fn default_output_name_strips_ext() {
+        assert_eq!(default_output_name(&PathBuf::from("v").join("trip.mkv")), "trip_reel.mp4");
+    }
+
+    #[test]
+    fn default_name_handles_unicode_and_spaces() {
+        assert_eq!(default_output_name(Path::new("my vidéo.mov")), "my vidéo_reel.mp4");
+    }
+
+    #[test]
+    fn default_name_without_extension_or_stem() {
+        assert_eq!(default_output_name(Path::new("clip")), "clip_reel.mp4");
+        assert_eq!(default_output_name(Path::new("")), "reel.mp4");
     }
 }

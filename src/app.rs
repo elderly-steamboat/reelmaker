@@ -1,9 +1,10 @@
 //! eframe application: owns the state, the two mpv players, and the worker-thread plumbing.
 
+use crate::export::{self, ExportEvent, ExportHandle};
 use crate::model::Mode;
 use crate::player::Player;
 use crate::probe::{self, MediaInfo, ProbeError};
-use crate::state::AppState;
+use crate::state::{default_output_name, AppState};
 use crate::thumbs;
 use crate::tools::{self, Tools, ToolsError};
 use crate::ui::video::{fit_rect, paint_video, SharedPlayer, SharedSurface};
@@ -27,6 +28,19 @@ pub struct App {
     rx: Receiver<Msg>,
     thumb_dir: PathBuf,
     pending_import: Option<PathBuf>,
+    export: Option<RunningExport>,
+    export_outcome: Option<Outcome>,
+}
+
+struct RunningExport {
+    handle: ExportHandle,
+    progress: f64,
+    output: PathBuf,
+}
+
+enum Outcome {
+    Done(PathBuf),
+    Failed(String),
 }
 
 struct Players {
@@ -72,7 +86,7 @@ impl App {
         let (tx, rx) = channel();
         let thumb_dir = std::env::temp_dir().join(format!("reelmaker-thumbs-{}", std::process::id()));
         let pending_import = std::env::args_os().nth(1).map(PathBuf::from);
-        App { state: AppState::default(), tools, players, tx, rx, thumb_dir, pending_import }
+        App { state: AppState::default(), tools, players, tx, rx, thumb_dir, pending_import, export: None, export_outcome: None }
     }
 
     fn import(&mut self, ctx: &egui::Context, path: PathBuf) {
@@ -178,7 +192,109 @@ impl App {
         }
     }
 
+    fn begin_export(&mut self) {
+        let (Ok(tools), Some(m)) = (&self.tools, &self.state.media) else { return };
+        let mut dialog = rfd::FileDialog::new()
+            .add_filter("MP4 video", &["mp4"])
+            .set_file_name(default_output_name(&m.path));
+        if let Some(dir) = m.path.parent() {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(mut out) = dialog.save_file() else { return };
+        if out.extension().is_none() {
+            out.set_extension("mp4");
+        }
+        let Some(mut job) = self.state.export_job(out.clone(), false) else { return };
+        if let Err(export::ExportError::Exists) = export::validate(&job) {
+            let replace = rfd::MessageDialog::new()
+                .set_title("Replace existing file?")
+                .set_description(format!("{} already exists. Replace it?", out.display()))
+                .set_buttons(rfd::MessageButtons::YesNo)
+                .show();
+            if replace != rfd::MessageDialogResult::Yes {
+                return;
+            }
+            job.overwrite = true;
+        }
+        match export::start(tools, job) {
+            Ok(handle) => self.export = Some(RunningExport { handle, progress: 0.0, output: out }),
+            Err(e) => self.export_outcome = Some(Outcome::Failed(e.to_string())),
+        }
+    }
+
+    fn poll_export(&mut self) {
+        let Some(run) = &mut self.export else { return };
+        let mut finished = None;
+        for ev in run.handle.events.try_iter() {
+            match ev {
+                ExportEvent::Progress(p) => run.progress = p,
+                ExportEvent::Done => finished = Some(Some(Outcome::Done(run.output.clone()))),
+                ExportEvent::Failed(m) => finished = Some(Some(Outcome::Failed(m))),
+                ExportEvent::Cancelled => finished = Some(None),
+            }
+        }
+        if let Some(outcome) = finished {
+            self.export = None;
+            if outcome.is_some() {
+                self.export_outcome = outcome;
+            }
+        }
+    }
+
+    fn export_windows(&mut self, ctx: &egui::Context) {
+        if let Some(run) = &self.export {
+            let mut cancel = false;
+            egui::Window::new("Exporting reel…")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.add(egui::ProgressBar::new(run.progress as f32).show_percentage().desired_width(320.0));
+                    ui.add_space(6.0);
+                    cancel = ui.button("Cancel").clicked();
+                });
+            if cancel {
+                run.handle.cancel();
+            }
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        let mut close = false;
+        match &self.export_outcome {
+            Some(Outcome::Done(path)) => {
+                egui::Window::new("Export finished")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ctx, |ui| {
+                        ui.label(format!("Saved to {}", path.display()));
+                        ui.horizontal(|ui| {
+                            if ui.button("Open folder").clicked() {
+                                open_folder(path);
+                            }
+                            close = ui.button("Close").clicked();
+                        });
+                    });
+            }
+            Some(Outcome::Failed(msg)) => {
+                egui::Window::new("Export failed")
+                    .collapsible(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ctx, |ui| {
+                        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                            ui.monospace(msg);
+                        });
+                        close = ui.button("Close").clicked();
+                    });
+            }
+            None => {}
+        }
+        if close {
+            self.export_outcome = None;
+        }
+    }
+
     fn header(&mut self, ctx: &egui::Context) {
+        let mut start_export = false;
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading(RichText::new("ReelMaker").strong());
@@ -191,7 +307,10 @@ impl App {
                     .unwrap_or_else(|| "No video loaded".into());
                 ui.weak(name);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_enabled(false, egui::Button::new("Export reel")).on_disabled_hover_text("Coming in the export step");
+                    let can_export = self.state.media.is_some() && self.export.is_none();
+                    if ui.add_enabled(can_export, egui::Button::new("Export reel")).clicked() {
+                        start_export = true;
+                    }
                     if ui.button("Import video").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("Video", &["mp4", "mkv", "mov", "avi", "webm", "m4v", "wmv", "flv", "ts", "mpg", "mpeg"])
@@ -204,6 +323,9 @@ impl App {
                 });
             });
         });
+        if start_export {
+            self.begin_export();
+        }
     }
 
     fn sidebar(&mut self, ctx: &egui::Context) {
@@ -325,6 +447,17 @@ impl App {
     }
 }
 
+fn open_folder(path: &Path) {
+    let dir = path.parent().unwrap_or(path);
+    #[cfg(windows)]
+    let cmd = "explorer";
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let cmd = "xdg-open";
+    let _ = std::process::Command::new(cmd).arg(dir).spawn();
+}
+
 pub fn fmt_time(secs: f64) -> String {
     let s = secs.max(0.0) as u64;
     format!("{}:{:02}", s / 60, s % 60)
@@ -356,10 +489,12 @@ impl eframe::App for App {
             self.import(ctx, path);
         }
         self.pump_messages(ctx);
+        self.poll_export();
         self.sync_players();
         self.header(ctx);
         self.sidebar(ctx);
         self.central(ctx);
+        self.export_windows(ctx);
         if self.state.media.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(33));
         }
