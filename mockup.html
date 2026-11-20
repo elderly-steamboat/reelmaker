@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ReelsMaker – UI mockup (throwaway)</title>
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --txt:#e8eaf0; --mute:#8b92a3; --acc:#ff3d71; --acc2:#7c5cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.4 system-ui,Segoe UI,sans-serif; height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; letter-spacing:.3px; }
+  header h1 span { color:var(--acc); }
+  header .sp { flex:1; }
+  button, .btn { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 14px; cursor:pointer; font:inherit; }
+  button:hover, .btn:hover { border-color:var(--mute); }
+  .primary { background:linear-gradient(135deg,var(--acc),var(--acc2)); border:0; font-weight:600; }
+  main { flex:1; display:grid; grid-template-columns: 1fr 320px; gap:14px; padding:14px 18px; min-height:0; }
+  .left { display:flex; flex-direction:column; gap:10px; min-height:0; }
+  .stagewrap { flex:1; min-height:0; background:#000; border:1px solid var(--line); border-radius:12px; display:flex; align-items:center; justify-content:center; padding:8px; position:relative; }
+  .stage { position:relative; aspect-ratio:16/9; max-height:100%; max-width:100%; height:100%; }
+  .stage canvas { width:100%; height:100%; display:block; border-radius:6px; background:#111; }
+  /* 9:16 crop box over the landscape frame: width = (9/16)*H, as % of W = (9/16)*(9/16)=31.64% */
+  .crop { position:absolute; top:0; bottom:0; width:31.64%; border:2px solid var(--acc); cursor:ew-resize; box-shadow:0 0 0 9999px rgba(0,0,0,.55); }
+  .crop::after { content:"drag to reframe"; position:absolute; left:50%; bottom:6px; transform:translateX(-50%); font-size:11px; background:var(--acc); padding:2px 8px; border-radius:10px; white-space:nowrap; }
+  .crop.hidden { display:none; }
+  .empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--mute); pointer-events:none; }
+  .controls { display:flex; align-items:center; gap:12px; }
+  .controls .time { font-variant-numeric:tabular-nums; color:var(--mute); min-width:110px; }
+  .timeline { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .tlhead { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .tlhead .lbl { color:var(--mute); font-size:12px; text-transform:uppercase; letter-spacing:.8px; }
+  .chips { display:flex; gap:6px; }
+  .chip { padding:4px 12px; border-radius:999px; font-size:13px; }
+  .chip.on { background:var(--acc); border-color:var(--acc); }
+  .track { position:relative; height:64px; border-radius:8px; background:repeating-linear-gradient(90deg,#222733 0 2px,#1b1f29 2px 40px); overflow:hidden; cursor:pointer; }
+  .thumbs { position:absolute; inset:0; display:flex; }
+  .thumbs i { flex:1; opacity:.55; }
+  .win { position:absolute; top:0; bottom:0; border:2px solid var(--acc); background:rgba(255,61,113,.22); border-radius:6px; cursor:grab; }
+  .win:active { cursor:grabbing; }
+  .win b { position:absolute; top:3px; left:6px; font-size:11px; background:rgba(0,0,0,.6); padding:1px 6px; border-radius:6px; font-weight:500; }
+  .head { position:absolute; top:0; bottom:0; width:2px; background:#fff; pointer-events:none; }
+  .ruler { display:flex; justify-content:space-between; color:var(--mute); font-size:11px; margin-top:4px; }
+  aside { display:flex; flex-direction:column; gap:12px; min-height:0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .card h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--mute); font-weight:600; }
+  .seg { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .seg button.on { border-color:var(--acc); background:rgba(255,61,113,.15); }
+  .phone { display:flex; justify-content:center; }
+  .phone .frame { width:180px; aspect-ratio:9/16; background:#000; border:3px solid #333; border-radius:22px; overflow:hidden; }
+  .phone canvas { width:100%; height:100%; display:block; }
+  .row { display:flex; justify-content:space-between; align-items:center; margin-top:8px; color:var(--mute); font-size:13px; }
+  .row input[type=range] { width:150px; accent-color:var(--acc); }
+  .spacer { flex:1; }
+  footer.note { color:var(--mute); font-size:12px; padding:0 18px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Reels<span>Maker</span></h1>
+  <span id="fname" style="color:var(--mute)">No video loaded</span>
+  <div class="sp"></div>
+  <label class="btn">Import video<input id="file" type="file" accept="video/*" hidden></label>
+  <button id="demo">Use demo clip</button>
+  <button class="primary" id="export">Export reel</button>
+</header>
+
+<main>
+  <section class="left">
+    <div class="stagewrap">
+      <div class="stage" id="stage">
+        <canvas id="main" width="960" height="540"></canvas>
+        <div class="crop hidden" id="crop"></div>
+        <div class="empty" id="empty"><div style="font-size:34px">🎬</div><div>Import a landscape video to start</div></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="play">▶ Play</button>
+      <button id="playwin" title="Loop only the selected window">⟲ Loop window</button>
+      <span class="time" id="time">0:00 / 0:00</span>
+    </div>
+
+    <div class="timeline">
+      <div class="tlhead">
+        <span class="lbl">Reel window</span>
+        <div class="chips" id="chips">
+          <button class="chip" data-d="15">Short · 15s</button>
+          <button class="chip on" data-d="30">Medium · 30s</button>
+          <button class="chip" data-d="60">Long · 60s</button>
+        </div>
+        <div class="spacer"></div>
+        <span id="winlbl" style="color:var(--mute)"></span>
+      </div>
+      <div class="track" id="track">
+        <div class="thumbs" id="thumbs"></div>
+        <div class="win" id="win"><b id="wintag"></b></div>
+        <div class="head" id="head"></div>
+      </div>
+      <div class="ruler" id="ruler"></div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h3>Output style</h3>
+      <div class="seg" id="modes">
+        <button data-m="blur" class="on">Blur bars<br><small style="color:var(--mute)">full frame + blur</small></button>
+        <button data-m="zoom">Zoom &amp; crop<br><small style="color:var(--mute)">fill 9:16</small></button>
+      </div>
+      <div class="row" id="blurrow"><span>Blur strength</span><input type="range" id="blur" min="4" max="40" value="22"></div>
+      <div class="row" id="zoomrow" style="display:none"><span>Zoom</span><input type="range" id="zoom" min="100" max="200" value="100"></div>
+    </div>
+    <div class="card">
+      <h3>Live preview · 9:16</h3>
+      <div class="phone"><div class="frame"><canvas id="prev" width="270" height="480"></canvas></div></div>
+    </div>
+    <div class="card">
+      <h3>Export</h3>
+      <div class="row" style="margin-top:0"><span>Resolution</span><span style="color:var(--txt)">1080 × 1920</span></div>
+      <div class="row"><span>Format</span><span style="color:var(--txt)">MP4 · 30fps</span></div>
+      <div class="row"><span>Length</span><span style="color:var(--txt)" id="exlen">30s</span></div>
+    </div>
+  </aside>
+</main>
+<footer class="note">Throwaway mockup — layout &amp; interaction only. Export does nothing yet.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const main = $('main'), mctx = main.getContext('2d');
+const prev = $('prev'), pctx = prev.getContext('2d');
+const state = { src:null, video:null, dur:0, t:0, playing:false, winDur:30, winStart:0, mode:'blur', blur:22, zoom:100, cropX:0.5, loopWin:false, last:0 };
+
+// synthetic demo source (offscreen) so mockup works without a file
+const demo = document.createElement('canvas'); demo.width = 960; demo.height = 540;
+function drawDemo(t) {
+  const c = demo.getContext('2d');
+  const g = c.createLinearGradient(0,0,960,540);
+  g.addColorStop(0,`hsl(${(t*8)%360},70%,35%)`); g.addColorStop(1,`hsl(${(t*8+90)%360},70%,20%)`);
+  c.fillStyle = g; c.fillRect(0,0,960,540);
+  c.fillStyle = 'rgba(255,255,255,.9)';
+  const x = 120 + (Math.sin(t*0.7)+1)*360, y = 270 + Math.cos(t*1.1)*120;
+  c.beginPath(); c.arc(x,y,60,0,7); c.fill();
+  c.fillStyle = '#fff'; c.font = 'bold 44px system-ui'; c.fillText('demo landscape clip', 40, 70);
+  c.font = '28px system-ui'; c.fillText(fmt(t), 40, 510);
+  return demo;
+}
+const fmt = s => { s = Math.max(0, s|0); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+
+function frame() { return state.video ? state.video : drawDemo(state.t); }
+function srcSize() { return state.video ? [state.video.videoWidth, state.video.videoHeight] : [960,540]; }
+
+function render() {
+  if (!state.src) return;
+  const f = frame(), [sw, sh] = srcSize();
+  mctx.drawImage(f, 0, 0, main.width, main.height);
+  // preview 9:16
+  const W = prev.width, H = prev.height;
+  pctx.clearRect(0,0,W,H);
+  if (state.mode === 'blur') {
+    pctx.save(); pctx.filter = `blur(${state.blur}px)`;
+    const bgW = H * sw/sh, bgX = -(bgW - W) * state.cropX;
+    pctx.drawImage(f, bgX, 0, bgW, H); pctx.restore();
+    pctx.fillStyle = 'rgba(0,0,0,.25)'; pctx.fillRect(0,0,W,H);
+    const h = W * sh/sw; pctx.drawImage(f, 0, (H-h)/2, W, h);
+  } else {
+    const z = state.zoom/100, cw = sh*9/16/z, ch = sh/z;
+    const cx = Math.min(sw-cw, Math.max(0, state.cropX*sw - cw/2)), cy = (sh-ch)/2;
+    pctx.drawImage(f, cx, cy, cw, ch, 0, 0, W, H);
+  }
+  // crop box (only meaningful in zoom mode)
+  const crop = $('crop'); crop.classList.toggle('hidden', state.mode !== 'zoom');
+  if (state.mode === 'zoom') {
+    const z = state.zoom/100, wPct = 31.64/z;
+    crop.style.width = wPct+'%';
+    crop.style.left = Math.min(100-wPct, Math.max(0, state.cropX*100 - wPct/2)) + '%';
+    crop.style.top = ((1-1/z)/2*100)+'%'; crop.style.bottom = ((1-1/z)/2*100)+'%';
+  }
+  // timeline
+  const pct = v => (v/state.dur*100)+'%';
+  $('head').style.left = pct(state.t);
+  $('time').textContent = fmt(state.t)+' / '+fmt(state.dur);
+}
+
+function layoutWindow() {
+  const d = Math.min(state.winDur, state.dur);
+  state.winStart = Math.min(state.winStart, state.dur - d);
+  const w = $('win');
+  w.style.left = (state.winStart/state.dur*100)+'%';
+  w.style.width = (d/state.dur*100)+'%';
+  $('wintag').textContent = fmt(state.winStart)+' – '+fmt(state.winStart+d);
+  $('winlbl').textContent = d+'s reel';
+  $('exlen').textContent = d+'s';
+}
+
+function load(dur, name, video) {
+  state.video = video||null; state.src = true; state.dur = dur; state.t = 0; state.winStart = 0;
+  $('fname').textContent = name; $('empty').style.display = 'none';
+  const th = $('thumbs'); th.innerHTML = '';
+  for (let i=0;i<24;i++) { const e=document.createElement('i'); e.style.background=`hsl(${i*15},50%,35%)`; th.appendChild(e); }
+  const r = $('ruler'); r.innerHTML = '';
+  for (let i=0;i<=5;i++) { const s=document.createElement('span'); s.textContent=fmt(dur*i/5); r.appendChild(s); }
+  layoutWindow(); render();
+}
+
+$('demo').onclick = () => load(180, 'demo-clip.mp4 (synthetic, 3:00)');
+$('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const v = document.createElement('video'); v.src = URL.createObjectURL(f); v.muted = true; v.playsInline = true;
+  v.onloadedmetadata = () => load(v.duration, f.name, v);
+  v.onseeked = render;
+};
+
+function seek(t) { state.t = Math.max(0, Math.min(state.dur, t)); if (state.video) state.video.currentTime = state.t; render(); }
+
+$('play').onclick = () => { if (!state.src) return; state.playing = !state.playing; $('play').textContent = state.playing ? '⏸ Pause' : '▶ Play'; state.last = performance.now(); if (state.playing && state.video) state.video.play(); else if (state.video) state.video.pause(); };
+$('playwin').onclick = e => { state.loopWin = !state.loopWin; e.target.style.borderColor = state.loopWin ? 'var(--acc)' : ''; if (state.loopWin) seek(state.winStart); };
+
+function tick(now) {
+  if (state.playing) {
+    if (state.video) state.t = state.video.currentTime; else state.t += (now - state.last)/1000;
+    state.last = now;
+    const end = state.winStart + Math.min(state.winDur, state.dur);
+    if (state.loopWin && state.t >= end) seek(state.winStart);
+    else if (state.t >= state.dur) { state.playing = false; $('play').textContent = '▶ Play'; }
+  }
+  render(); requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// duration chips
+$('chips').onclick = e => { const b = e.target.closest('.chip'); if (!b) return;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c===b));
+  state.winDur = +b.dataset.d; if (state.src) layoutWindow(); };
+
+// mode toggle
+$('modes').onclick = e => { const b = e.target.closest('button'); if (!b) return;
+  state.mode = b.dataset.m; document.querySelectorAll('#modes button').forEach(x => x.classList.toggle('on', x===b));
+  $('blurrow').style.display = state.mode==='blur' ? '' : 'none'; $('zoomrow').style.display = state.mode==='zoom' ? '' : 'none'; };
+$('blur').oninput = e => state.blur = +e.target.value;
+$('zoom').oninput = e => state.zoom = +e.target.value;
+
+// drag helpers
+function drag(el, onMove, onStart) {
+  el.addEventListener('pointerdown', e => { e.preventDefault(); el.setPointerCapture(e.pointerId); onStart && onStart(e);
+    const mv = ev => onMove(ev), up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); };
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); onMove(e); });
+}
+// slide window
+let grab = 0;
+drag($('win'), e => { if (!state.src) return; const r = $('track').getBoundingClientRect();
+  const t = (e.clientX - r.left)/r.width*state.dur - grab;
+  state.winStart = Math.max(0, Math.min(state.dur - Math.min(state.winDur,state.dur), t)); layoutWindow(); },
+  e => { const r = $('track').getBoundingClientRect(); grab = (e.clientX - r.left)/r.width*state.dur - state.winStart; });
+// click track to scrub
+$('track').addEventListener('pointerdown', e => { if (e.target.closest('.win') || !state.src) return;
+  const r = $('track').getBoundingClientRect(); seek((e.clientX - r.left)/r.width*state.dur); });
+// reframe crop (zoom mode)
+drag($('crop'), e => { const r = $('stage').getBoundingClientRect(); state.cropX = Math.max(0, Math.min(1, (e.clientX - r.left)/r.width)); });
+</script>
+</body>
+</html>
