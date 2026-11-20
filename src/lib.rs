@@ -5,6 +5,7 @@ pub mod filters;
 pub mod model;
 pub mod player;
 pub mod probe;
+pub mod state;
 pub mod thumbs;
 pub mod tools;
 pub mod window;
