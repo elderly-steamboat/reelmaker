@@ -6,7 +6,7 @@ description = "Turn landscape videos into 9:16 reels"
 
 [dependencies]
 eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
-egui_extras = { version = "0.31", features = ["image"] }
+egui_extras = { version = "0.31", features = ["image", "file"] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 libmpv2 = "7.0.1"
 rfd = "0.15"

@@ -40,6 +40,7 @@ struct Players {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> App {
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         let exe_dir = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(Path::to_path_buf))
@@ -97,6 +98,7 @@ impl App {
                 }
                 Msg::Thumbs(path, files) => {
                     if self.state.media.as_ref().is_some_and(|m| m.path == path) {
+                        ctx.forget_all_images();
                         self.state.set_thumbs(files);
                     }
                 }
@@ -157,6 +159,14 @@ impl App {
         }
         if (t - pt).abs() > 0.25 {
             preview.seek(t);
+        }
+    }
+
+    fn seek(&mut self, t: f64) {
+        if let Ok(p) = &self.players {
+            for pl in [&p.stage, &p.preview] {
+                pl.lock().unwrap().seek(t);
+            }
         }
     }
 
@@ -261,13 +271,18 @@ impl App {
                 .unwrap_or(16.0 / 9.0);
             let avail = egui::Rect::from_min_size(
                 ui.cursor().min,
-                egui::vec2(ui.available_width(), (ui.available_height() - 60.0).max(100.0)),
+                egui::vec2(ui.available_width(), (ui.available_height() - 230.0).max(100.0)),
             );
             let rect = fit_rect(avail, aspect);
             ui.allocate_rect(avail, egui::Sense::hover());
             ui.painter().rect_filled(avail, 8.0, Color32::BLACK);
             match (&self.players, &self.state.media) {
-                (Ok(p), Some(_)) => paint_video(ui, rect, &p.stage, &p.stage_surface),
+                (Ok(p), Some(_)) => {
+                    paint_video(ui, rect, &p.stage, &p.stage_surface);
+                    if self.state.style.mode == Mode::ZoomCrop {
+                        crate::ui::cropbox::show(ui, rect, &mut self.state);
+                    }
+                }
                 _ => {
                     ui.painter().text(
                         avail.center(),
@@ -278,6 +293,7 @@ impl App {
                     );
                 }
             }
+            let mut playhead = 0.0;
             ui.horizontal(|ui| {
                 let (paused, pos, dur) = match &self.players {
                     Ok(p) if self.state.media.is_some() => {
@@ -290,8 +306,21 @@ impl App {
                 if ui.add_enabled(self.state.media.is_some(), egui::Button::new(label)).clicked() {
                     self.toggle_play();
                 }
+                let has = self.state.window.is_some();
+                if ui.add_enabled(has, egui::SelectableLabel::new(self.state.loop_window, "⟲ Loop window")).clicked() {
+                    self.state.loop_window = !self.state.loop_window;
+                    if let (true, Some(w)) = (self.state.loop_window, self.state.window) {
+                        self.seek(w.start);
+                    }
+                }
                 ui.monospace(format!("{} / {}", fmt_time(pos), fmt_time(dur)));
+                playhead = pos;
             });
+            if self.state.media.is_some() {
+                if let Some(t) = crate::ui::timeline::show(ui, &mut self.state, playhead) {
+                    self.seek(t);
+                }
+            }
         });
     }
 }
