@@ -37,7 +37,7 @@ pub fn reel_graph(style: &Style, canvas: Canvas, input: &str, output: &str) -> S
             // Crop width never exceeds the frame: sources narrower than 9:16 crop at full width.
             let cw = format!("min(iw,ih*9/16/{z})");
             format!(
-                "[{input}]crop=w='{cw}':h='{cw}*16/9':x='clip({cx}*iw-w/2,0,iw-w)':y='(ih-h)/2',scale={w}:{h}[{output}]"
+                "[{input}]crop=w='{cw}':h='{cw}*16/9':x='clip({cx}*iw-ow/2,0,iw-ow)':y='(ih-oh)/2',scale={w}:{h}[{output}]"
             )
         }
     }
@@ -88,6 +88,15 @@ mod tests {
         let g = reel_graph(&s, Canvas::EXPORT, "0:v", "vout");
         assert!(g.contains("min(iw"), "{g}");
         assert!(g.contains("*16/9"), "{g}");
+    }
+
+    #[test]
+    fn crop_uses_ffmpeg_output_size_constants() {
+        // `w`/`h` are not defined inside crop expressions; `ow`/`oh` are.
+        let s = Style { mode: Mode::ZoomCrop, ..Style::default() };
+        let g = reel_graph(&s, Canvas::EXPORT, "0:v", "vout");
+        assert!(g.contains("clip(0.5*iw-ow/2,0,iw-ow)"), "{g}");
+        assert!(g.contains("y='(ih-oh)/2'"), "{g}");
     }
 
     #[test]
