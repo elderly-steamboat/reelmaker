@@ -89,10 +89,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Only the Windows bundle is published: it is the one that has been run by hand. The Linux and
+      # macOS bundles are still built and smoke-tested above and stay available as workflow artifacts.
       - uses: actions/download-artifact@v4
         with:
+          name: reelmaker-Windows
           path: artifacts
-          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
+          prerelease: true
+          body: |
+            Windows x86_64 build. Unzip and run `reelmaker.exe`; ffmpeg and libmpv are bundled.
+            The build is unsigned (SmartScreen will warn) and bundles a GPL ffmpeg.
