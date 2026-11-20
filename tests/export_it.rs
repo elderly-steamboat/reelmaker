@@ -54,6 +54,7 @@ fn every_source_shape_exports_1080x1920() {
             let m = info(&out);
             assert_eq!((m.width, m.height), (1080, 1920), "{w}x{h} {mode:?}");
             assert!((m.duration - 3.0).abs() < 0.3, "{w}x{h} {mode:?}: {}", m.duration);
+            assert_eq!(common::sample_aspect_ratio(&out), "1:1", "{w}x{h} {mode:?}: output must be square-pixel 9:16");
         }
     }
 }
@@ -145,4 +146,35 @@ fn bad_input_fails_with_stderr_tail() {
     let evs = run(job(&junk, d.path().join("reel.mp4"), 0.0, 2.0, Mode::BlurBars, false));
     assert!(matches!(evs.last(), Some(ExportEvent::Failed(m)) if !m.is_empty()), "{evs:?}");
     assert!(!d.path().join("reel.mp4").exists());
+}
+
+#[test]
+fn anamorphic_source_exports_square_pixels() {
+    for mode in [Mode::BlurBars, Mode::ZoomCrop] {
+        let d = tempfile::tempdir().unwrap();
+        let src = common::make_clip_anamorphic(d.path(), 720, 480, 3, "32/27");
+        let out = d.path().join("reel.mp4");
+        assert_eq!(run(job(&src, out.clone(), 0.0, 2.0, mode, false)).last(), Some(&ExportEvent::Done), "{mode:?}");
+        let m = info(&out);
+        assert_eq!((m.width, m.height), (1080, 1920), "{mode:?}");
+        assert_eq!(common::sample_aspect_ratio(&out), "1:1", "{mode:?}");
+    }
+}
+
+#[test]
+fn dropping_the_handle_cancels_and_cleans_up() {
+    let d = tempfile::tempdir().unwrap();
+    let src = common::make_clip(d.path(), 1920, 1080, 120, false);
+    let out = d.path().join("reel.mp4");
+    let h = start(&tools(), job(&src, out.clone(), 0.0, 60.0, Mode::BlurBars, false)).unwrap();
+    loop {
+        match h.events.recv_timeout(Duration::from_secs(60)).unwrap() {
+            ExportEvent::Progress(_) => break,
+            other => panic!("ended before drop: {other:?}"),
+        }
+    }
+    drop(h); // e.g. the app window was closed mid-export
+    assert!(!out.exists(), "nothing may be written when the export was abandoned");
+    let partials = std::fs::read_dir(d.path()).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains("partial")).count();
+    assert_eq!(partials, 0, "drop must wait for ffmpeg to stop and remove the .partial file");
 }

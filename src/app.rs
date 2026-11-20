@@ -4,7 +4,7 @@ use crate::export::{self, ExportEvent, ExportHandle};
 use crate::model::Mode;
 use crate::player::Player;
 use crate::probe::{self, MediaInfo, ProbeError};
-use crate::state::{default_output_name, AppState};
+use crate::state::{default_output_name, play_restart, AppState};
 use crate::thumbs;
 use crate::tools::{self, Tools, ToolsError};
 use crate::ui::video::{fit_rect, paint_video, SharedPlayer, SharedSurface};
@@ -186,7 +186,17 @@ impl App {
 
     fn toggle_play(&mut self) {
         let Ok(p) = &self.players else { return };
-        let paused = p.stage.lock().unwrap().paused();
+        let (paused, pos, dur) = {
+            let s = p.stage.lock().unwrap();
+            (s.paused(), s.position(), s.duration().unwrap_or(0.0))
+        };
+        if paused {
+            // After playing to the end, Play restarts from the reel window instead of doing nothing.
+            if let Some(t) = play_restart(pos, dur, self.state.window) {
+                self.seek(t);
+            }
+        }
+        let Ok(p) = &self.players else { return };
         for pl in [&p.stage, &p.preview] {
             pl.lock().unwrap().set_paused(!paused);
         }
@@ -464,6 +474,11 @@ pub fn fmt_time(secs: f64) -> String {
 }
 
 impl eframe::App for App {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Closing the window mid-export stops ffmpeg and removes the partial file (ExportHandle::drop).
+        self.export = None;
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Err(e) = &self.tools {
             egui::CentralPanel::default().show(ctx, |ui| {

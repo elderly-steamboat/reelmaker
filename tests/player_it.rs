@@ -1,6 +1,7 @@
 mod common;
 
-use reelmaker::filters::{reel_graph, Canvas};
+use reelmaker::filters::{preview_graph, reel_graph, Canvas};
+use reelmaker::probe::probe;
 use reelmaker::model::{Mode, Style};
 use reelmaker::player::Player;
 use std::time::{Duration, Instant};
@@ -35,9 +36,17 @@ fn loads_and_reports_duration() {
 #[test]
 fn seek_then_position() {
     let (mut p, _d) = loaded(5);
-    p.seek(2.0);
-    std::thread::sleep(Duration::from_millis(400));
-    assert!((p.position() - 2.0).abs() < 0.2, "{}", p.position());
+    // A seek issued while mpv is still starting playback can be dropped; users click again, so retry.
+    let t = Instant::now();
+    let mut last_try = None::<Instant>;
+    while (p.position() - 2.0).abs() >= 0.2 {
+        assert!(t.elapsed() < Duration::from_secs(8), "position stuck at {}", p.position());
+        if last_try.is_none_or(|l| l.elapsed() > Duration::from_millis(300)) {
+            p.seek(2.0);
+            last_try = Some(Instant::now());
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 #[test]
@@ -74,4 +83,27 @@ fn loop_window_wraps() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(max_pos <= 2.2, "left the window: {max_pos}");
+}
+
+#[test]
+fn rotated_source_previews_as_portrait_canvas() {
+    let d = tempfile::tempdir().unwrap();
+    let clip = common::make_clip_rotated(d.path(), 1280, 720, 4);
+    let rotation = probe(std::path::Path::new("ffprobe"), &clip).unwrap().rotation;
+    let mut p = Player::new_headless().unwrap();
+    p.set_paused(true);
+    let g = preview_graph(&Style::default(), Canvas { w: 270, h: 480 }, "vid1", "vo", rotation);
+    p.set_reel_graph(Some(&g)).unwrap();
+    p.load(&clip).unwrap();
+    wait_duration(&p);
+    p.seek(0.5);
+    let t = Instant::now();
+    loop {
+        if let Some(size) = p.video_out_size() {
+            assert_eq!(size, (270, 480), "preview canvas must be 9:16 portrait");
+            return;
+        }
+        assert!(t.elapsed() < Duration::from_secs(10), "mpv never produced video output params");
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }

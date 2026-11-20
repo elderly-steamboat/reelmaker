@@ -1,7 +1,7 @@
 //! UI-independent application state. No egui or mpv in here, so it is plain-unit-testable.
 
 use crate::export::ExportJob;
-use crate::filters::{reel_graph, Canvas};
+use crate::filters::{preview_graph, Canvas};
 use crate::model::{Mode, Preset, Style};
 use crate::probe::{MediaInfo, ProbeError};
 use crate::window::ReelWindow;
@@ -98,8 +98,18 @@ impl AppState {
 
     /// mpv `lavfi-complex` graph for the 9:16 preview; `None` with no media loaded.
     pub fn preview_graph(&self) -> Option<String> {
-        self.media.as_ref()?;
-        Some(reel_graph(&self.style, PREVIEW_CANVAS, "vid1", "vo"))
+        let m = self.media.as_ref()?;
+        Some(preview_graph(&self.style, PREVIEW_CANVAS, "vid1", "vo", m.info.rotation))
+    }
+}
+
+/// Where Play should restart from when the video has played to the end (`keep-open` leaves it
+/// paused on the last frame, where Play would otherwise do nothing). `None` = just resume.
+pub fn play_restart(position: f64, duration: f64, window: Option<ReelWindow>) -> Option<f64> {
+    if duration > 0.0 && position >= duration - 0.1 {
+        Some(window.map_or(0.0, |w| w.start))
+    } else {
+        None
     }
 }
 
@@ -116,7 +126,7 @@ mod tests {
     use super::*;
 
     fn info(duration: f64) -> MediaInfo {
-        MediaInfo { duration, width: 1920, height: 1080, fps: 30.0, has_audio: true }
+        MediaInfo { duration, width: 1920, height: 1080, fps: 30.0, has_audio: true, rotation: 0 }
     }
 
     fn loaded(duration: f64) -> AppState {
@@ -241,5 +251,27 @@ mod tests {
     fn default_name_without_extension_or_stem() {
         assert_eq!(default_output_name(Path::new("clip")), "clip_reel.mp4");
         assert_eq!(default_output_name(Path::new("")), "reel.mp4");
+    }
+
+    #[test]
+    fn play_restart_at_end_goes_to_window_start() {
+        let w = Some(ReelWindow { start: 42.0, length: 15.0 });
+        assert_eq!(play_restart(59.95, 60.0, w), Some(42.0));
+        assert_eq!(play_restart(60.0, 60.0, None), Some(0.0));
+    }
+
+    #[test]
+    fn play_restart_mid_video_just_resumes() {
+        assert_eq!(play_restart(12.0, 60.0, None), None);
+        assert_eq!(play_restart(0.0, 0.0, None), None);
+    }
+
+    #[test]
+    fn preview_graph_rotates_for_rotated_sources() {
+        let mut s = AppState::default();
+        let mut i = info(60.0);
+        i.rotation = 90;
+        s.load_result("a.mp4".into(), Ok(i));
+        assert!(s.preview_graph().unwrap().starts_with("[vid1]transpose="));
     }
 }

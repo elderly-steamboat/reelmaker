@@ -13,7 +13,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # Linux builds on the oldest supported LTS so the bundled binary/libs only need its older glibc.
+        os: [windows-latest, ubuntu-22.04, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +38,7 @@ jobs:
 
       - name: Bundle (Linux)
         if: runner.os == 'Linux'
-        run: ./scripts/build.sh
+        run: bash scripts/build.sh
 
       # ---- macOS -------------------------------------------------------------------------------
       - name: Install macOS dependencies
@@ -53,7 +54,7 @@ jobs:
 
       - name: Bundle (macOS)
         if: runner.os == 'macOS'
-        run: ./scripts/build.sh
+        run: bash scripts/build.sh
 
       # ---- Windows -----------------------------------------------------------------------------
       # build.ps1 fetches libmpv + ffmpeg into vendor\, builds the release bundle and smoke-tests it.

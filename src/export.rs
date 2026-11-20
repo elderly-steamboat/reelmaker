@@ -58,6 +58,21 @@ pub struct ExportHandle {
     pub events: mpsc::Receiver<ExportEvent>,
     cancelled: Arc<AtomicBool>,
     child: Arc<Mutex<Option<Child>>>,
+    waiter: Option<std::thread::JoinHandle<()>>,
+    finished: Arc<AtomicBool>,
+}
+
+impl Drop for ExportHandle {
+    /// Abandoning a running export (e.g. the app window was closed) stops ffmpeg and removes the
+    /// `.partial` file before returning, so nothing keeps encoding invisibly in the background.
+    fn drop(&mut self) {
+        if !self.finished.load(Ordering::SeqCst) {
+            self.cancel();
+        }
+        if let Some(w) = self.waiter.take() {
+            let _ = w.join();
+        }
+    }
 }
 
 impl ExportHandle {
@@ -78,7 +93,9 @@ pub fn validate(job: &ExportJob) -> Result<(), ExportError> {
     let name = job.output.file_name().ok_or(ExportError::OutputDirMissing)?;
     let out = dir.join(name);
     if let Ok(src) = job.input.canonicalize() {
-        if src == out {
+        // `out` keeps the user's typed spelling; an existing file may still be the source under a
+        // different case (Windows/macOS) or via a symlink, so compare its resolved path too.
+        if src == out || out.canonicalize().is_ok_and(|resolved| resolved == src) {
             return Err(ExportError::SameAsSource);
         }
     }
@@ -161,7 +178,9 @@ pub fn start(tools: &Tools, job: ExportJob) -> Result<ExportHandle, ExportError>
     });
 
     let (child_w, cancelled_w) = (child.clone(), cancelled.clone());
-    std::thread::spawn(move || {
+    let finished = Arc::new(AtomicBool::new(false));
+    let finished_w = finished.clone();
+    let waiter = std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             if let Some(t) = parse_progress_line(&line) {
                 let _ = tx.send(ExportEvent::Progress((t / length).clamp(0.0, 1.0)));
@@ -187,9 +206,10 @@ pub fn start(tools: &Tools, job: ExportJob) -> Result<ExportHandle, ExportError>
             ExportEvent::Failed(if msg.is_empty() { "ffmpeg failed".into() } else { msg })
         };
         let _ = tx.send(event);
+        finished_w.store(true, Ordering::SeqCst);
     });
 
-    Ok(ExportHandle { events: rx, cancelled, child })
+    Ok(ExportHandle { events: rx, cancelled, child, waiter: Some(waiter), finished })
 }
 
 #[cfg(test)]
@@ -288,5 +308,16 @@ mod tests {
         std::fs::write(&src, b"x").unwrap();
         let out = d.path().join("nope").join("o.mp4");
         assert_eq!(validate(&job(src.to_str().unwrap(), out.to_str().unwrap())), Err(ExportError::OutputDirMissing));
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn validate_same_source_with_different_case() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("Video.mp4");
+        std::fs::write(&src, b"x").unwrap();
+        let mut j = job(src.to_str().unwrap(), d.path().join("video.MP4").to_str().unwrap());
+        j.overwrite = true;
+        assert_eq!(validate(&j), Err(ExportError::SameAsSource));
     }
 }

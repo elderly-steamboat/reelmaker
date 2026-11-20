@@ -111,6 +111,13 @@ impl Player {
         self.mpv.get_property::<bool>("pause").unwrap_or(true)
     }
 
+    /// Size of the frames mpv produces after the filter graph (`None` until video output is set up).
+    pub fn video_out_size(&self) -> Option<(i64, i64)> {
+        let w = self.mpv.get_property::<i64>("video-out-params/w").ok()?;
+        let h = self.mpv.get_property::<i64>("video-out-params/h").ok()?;
+        Some((w, h))
+    }
+
     /// `None` until the file has loaded.
     pub fn duration(&self) -> Option<f64> {
         self.mpv.get_property::<f64>("duration").ok().filter(|d| *d > 0.0)
@@ -131,7 +138,14 @@ impl Player {
     }
 
     /// Applies (or clears) the 9:16 graph from `filters::reel_graph(.., "vid1", "vo")`.
+    ///
+    /// With a graph, mpv's own container-rotation handling is switched off (`video-rotate=no`):
+    /// `preview_graph` already rotates the frames, and mpv would otherwise rotate the finished
+    /// 9:16 canvas a second time. Without a graph, mpv's normal auto-rotation applies.
     pub fn set_reel_graph(&mut self, graph: Option<&str>) -> Result<(), String> {
+        self.mpv
+            .set_property("video-rotate", if graph.is_some() { "no" } else { "0" })
+            .map_err(err("video-rotate"))?;
         self.mpv.set_property("lavfi-complex", graph.unwrap_or("")).map_err(err("lavfi-complex"))
     }
 
