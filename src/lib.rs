@@ -4,5 +4,6 @@ pub mod export;
 pub mod filters;
 pub mod model;
 pub mod probe;
+pub mod thumbs;
 pub mod tools;
 pub mod window;
