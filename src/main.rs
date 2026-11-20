@@ -1,4 +1,5 @@
 mod model;
+mod window;
 
 use eframe::egui;
 
