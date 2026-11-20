@@ -86,6 +86,15 @@ build_macos() {
   mkdir -p "$BUNDLE/libs"
   dylibbundler -of -b -cd -d "$BUNDLE/libs" -p "@executable_path/libs/" \
     -x "$BUNDLE/reelmaker" -x "$BUNDLE/ffmpeg" -x "$BUNDLE/ffprobe"
+  # dylibbundler can rewrite several different rpaths of one dylib to the same value; dyld refuses
+  # a Mach-O with duplicate LC_RPATH entries ("duplicate LC_RPATH"), so keep exactly one of each.
+  for f in "$BUNDLE"/reelmaker "$BUNDLE"/ffmpeg "$BUNDLE"/ffprobe "$BUNDLE"/libs/*.dylib; do
+    [ -f "$f" ] || continue
+    otool -l "$f" | awk '/cmd LC_RPATH/ {r=1} r && /^ *path / {print $2; r=0}' | sort | uniq -d | while read -r p; do
+      install_name_tool -delete_rpath "$p" "$f"
+    done
+    codesign --force --sign - "$f" >/dev/null 2>&1 || true   # editing invalidates the signature (arm64 needs one)
+  done
   cp "$ROOT/README.md" "$BUNDLE/"
 
   (cd "$DIST" && zip -qr "$NAME.zip" "$NAME")

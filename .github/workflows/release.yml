@@ -13,8 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux builds on the oldest supported LTS so the bundled binary/libs only need its older glibc.
-        os: [windows-latest, ubuntu-22.04, macos-latest]
+        # Linux: Ubuntu 24.04. Older LTS releases ship libmpv < 0.33 (client API 1.x), which the
+        # libmpv2 crate rejects, so the Linux bundle needs glibc >= 2.39 (see README).
+        os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

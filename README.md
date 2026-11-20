@@ -34,6 +34,8 @@ For development, `cargo run` / `cargo test` work once `vendor/mpv-dev` exists (r
 
 ### Linux
 
+The Linux bundle is built on Ubuntu 24.04 (the `libmpv2` crate needs libmpv client API 2.x, i.e. mpv ≥ 0.33, which Ubuntu 22.04's libmpv-dev lacks), so it needs **glibc ≥ 2.39** (Ubuntu 24.04+, Fedora 40+, Debian 13+).
+
 ```bash
 sudo apt install libmpv-dev ffmpeg patchelf pkg-config xz-utils libgtk-3-dev libxkbcommon-dev \
   libwayland-dev libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev
