@@ -1,3 +1,4 @@
+mod filters;
 mod model;
 mod window;
 
