@@ -89,6 +89,41 @@ if (Test-Path $zipPath) { Remove-Item $zipPath }
 Compress-Archive -Path $bundle -DestinationPath $zipPath
 Write-Host "Created $zipPath"
 
+# ---- 4b. installer ---------------------------------------------------------------------------
+# One double-clickable ReelMaker-Setup-<version>.exe (per-user install, no admin rights needed).
+$version = [regex]::Match((Get-Content (Join-Path $root "Cargo.toml") -Raw), '(?m)^version\s*=\s*"([^"]+)"').Groups[1].Value
+$iscc = @(
+  (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+  (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+  (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+$setupExe = Join-Path $dist "ReelMaker-Setup-$version.exe"
+if (-not $iscc) {
+  Write-Warning "Inno Setup not found - skipping the installer. Install it with: winget install JRSoftware.InnoSetup"
+} else {
+  if (Test-Path $setupExe) { Remove-Item $setupExe }
+  & $iscc /Qp "/DAppVersion=$version" (Join-Path $PSScriptRoot "installer.iss")
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $setupExe)) { throw "Inno Setup failed" }
+  Write-Host "Created $setupExe"
+
+  # Install silently into a temp dir, run the installed app, then uninstall again.
+  $inst = Join-Path ([System.IO.Path]::GetTempPath()) ("reelmaker-install-" + [guid]::NewGuid())
+  $p = Start-Process -FilePath $setupExe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-","/DIR=`"$inst`"" -Wait -PassThru
+  if ($p.ExitCode -ne 0) { throw "silent install failed (exit $($p.ExitCode))" }
+  foreach ($f in "reelmaker.exe","libmpv-2.dll","ffmpeg.exe","ffprobe.exe","unins000.exe") {
+    if (-not (Test-Path (Join-Path $inst $f))) { throw "installer did not install $f" }
+  }
+  $vf = Join-Path $inst "version.txt"
+  $v = Start-Process -FilePath (Join-Path $inst "reelmaker.exe") -ArgumentList "--version" -Wait -NoNewWindow -PassThru -RedirectStandardOutput $vf
+  $vout = (Get-Content $vf -ErrorAction SilentlyContinue) -join " "
+  if ($v.ExitCode -ne 0 -or $vout -notmatch "reelmaker") { throw "installed app failed to start: '$vout'" }
+  Write-Host "Installer smoke test OK: $vout"
+  $u = Start-Process -FilePath (Join-Path $inst "unins000.exe") -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+  Start-Sleep -Seconds 2
+  if (Test-Path (Join-Path $inst "reelmaker.exe")) { throw "uninstall left reelmaker.exe behind" }
+  Remove-Item -Recurse -Force $inst -ErrorAction SilentlyContinue
+}
+
 # ---- 5. smoke test ---------------------------------------------------------------------------
 $test = Join-Path ([System.IO.Path]::GetTempPath()) ("reelmaker-smoke-" + [guid]::NewGuid())
 New-Item -ItemType Directory $test | Out-Null
@@ -104,4 +139,8 @@ try {
   if ($proc.ExitCode -ne 0 -or $out -notmatch "reelmaker") { throw "smoke test failed: '$out' (exit $($proc.ExitCode))" }
   Write-Host "Smoke test OK: $out"
   & (Join-Path (Join-Path $test $name) "ffmpeg.exe") -version | Select-Object -First 1
-} finally { $env:Path = $savedPath; Remove-Item -Recurse -Force $test }
+} finally {
+  $env:Path = $savedPath
+  Start-Sleep -Seconds 1   # let ffmpeg.exe release its file lock (scanners can hold it briefly)
+  Remove-Item -Recurse -Force $test -ErrorAction SilentlyContinue   # temp cleanup must never fail the build
+}

@@ -59,6 +59,14 @@ jobs:
 
       # ---- Windows -----------------------------------------------------------------------------
       # build.ps1 fetches libmpv + ffmpeg into vendor\, builds the release bundle and smoke-tests it.
+      - name: Install Inno Setup (Windows installer builder)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
       - name: Bundle (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -77,6 +85,7 @@ jobs:
         with:
           name: reelmaker-${{ runner.os }}
           path: |
+            dist/*.exe
             dist/*.zip
             dist/*.tar.gz
           if-no-files-found: error
@@ -100,5 +109,7 @@ jobs:
           files: artifacts/*
           prerelease: true
           body: |
-            Windows x86_64 build. Unzip and run `reelmaker.exe`; ffmpeg and libmpv are bundled.
-            The build is unsigned (SmartScreen will warn) and bundles a GPL ffmpeg.
+            **Windows x86_64.** Download and run `ReelMaker-Setup-*.exe` (no admin rights needed; adds a
+            Start-menu entry and an uninstaller). The `.zip` is a portable copy: unzip and run `reelmaker.exe`.
+            ffmpeg and libmpv are bundled. The build is unsigned (SmartScreen will warn: "More info" -> "Run anyway")
+            and bundles a GPL ffmpeg.
