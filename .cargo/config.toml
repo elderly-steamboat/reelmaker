@@ -1,0 +1,2 @@
+[target.'cfg(windows)']
+runner = ["cmd", "/C", 'scripts\runner.cmd']
